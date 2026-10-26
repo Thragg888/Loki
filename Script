@@ -1,615 +1,1184 @@
 -- ============================================================
--- LARPER HUB  |  MM2 : Silent Aim (Gun + Knife) + ESP + CamLock
--- UI: WindUI (Footagesus)
--- Silent aim core: Universal Silent Aim (Averiias/Stefanuk12/xaxa)
--- Role detection: Elite Scripts (open source)
+-- LARP HUB — Forsaken
+-- LocalScript | Execute via Executor
+-- Game: Forsaken (Roblox) | Character: Guest 1337
+-- UI: WindUI
 -- ============================================================
 
-if not game:IsLoaded() then game.Loaded:Wait() end
+local WindUI = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
+))()
 
---// SERVICES
-local Players           = game:GetService("Players")
-local RunService        = game:GetService("RunService")
-local UserInputService  = game:GetService("UserInputService")
+-- ── Services ──────────────────────────────────────────────────
+local Players      = game:GetService("Players")
+local RunService   = game:GetService("RunService")
+local StarterGui   = game:GetService("StarterGui")
+local Lighting     = game:GetService("Lighting")
+local Debris       = game:GetService("Debris")
+local TweenService = game:GetService("TweenService")
+
+-- ── Local player ───────────────────────────────────────────────
+local LocalPlayer    = Players.LocalPlayer
+local PlayerGui      = LocalPlayer:WaitForChild("PlayerGui")
+local LocalCharacter = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local LocalRoot      = LocalCharacter:FindFirstChild("HumanoidRootPart")
+
+-- ── Forsaken real paths ────────────────────────────────────────
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace         = game:GetService("Workspace")
-local LocalPlayer       = Players.LocalPlayer
-local Camera            = Workspace.CurrentCamera
-local Mouse             = LocalPlayer:GetMouse()
+local PlayersFolder     = workspace:WaitForChild("Players")
+local SurvivorsFolder   = PlayersFolder:WaitForChild("Survivors")
+local KillersFolder     = PlayersFolder:WaitForChild("Killers")
 
-local RenderStepped     = RunService.RenderStepped
-local WorldToViewport   = Camera.WorldToViewportPoint
-local GetMouseLocation  = UserInputService.GetMouseLocation
-local FindFirstChild    = game.FindFirstChild
+-- Real remote (buffer-encoded, confirmed from open-source)
+local testRemote = ReplicatedStorage
+    :WaitForChild("Modules")
+    :WaitForChild("Network")
+    :WaitForChild("Network")
+    :WaitForChild("RemoteEvent")
 
---// SETTINGS
-local S = {
-    -- Silent Aim
-    SilentAim        = false,
-    SilentAimKey     = "RightAlt",
-    TeamCheck        = false,
-    VisibleCheck     = false,
-    TargetPart       = "HumanoidRootPart",
-    Method           = "Raycast",          -- Raycast / FindPartOnRay / Mouse.Hit
-    FOV              = 150,
-    FOVVisible       = true,
-    HitChance        = 100,
-    Prediction       = false,
-    PredictionAmount = 0.165,
-    -- Gun remote silent aim
-    GunSilentAim     = true,               -- separate toggle so you can disable if needed
+-- Real stamina module (confirmed from open-source)
+local sprintModule = require(ReplicatedStorage.Systems.Character.Game.Sprinting)
+
+-- ─────────────────────────────────────────────────────────────
+-- Buffer helpers — encode ability names the real way
+-- ─────────────────────────────────────────────────────────────
+local function makeBuffer(bytes)
+    local b = buffer.create(#bytes)
+    for i = 1, #bytes do buffer.writeu8(b, i-1, bytes[i]) end
+    return b
+end
+
+-- Confirmed from open-source:
+-- "Block"  = { 3,5,0,0,0,66,108,111,99,107 }
+-- "Charge" is labeled "Slash" in the source = { 3,5,0,0,0,83,108,97,115,104 }
+-- "Clone"  = { 3,5,0,0,0,67,108,111,110,101 }
+local function fireRemoteBlock()
+    testRemote:FireServer("UseActorAbility",
+        {makeBuffer({3,5,0,0,0,66,108,111,99,107})})
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Sound ID table (full list from open-source — much larger)
+-- ─────────────────────────────────────────────────────────────
+local BlockSounds = {
+    ["102228729296384"]=true,["140242176732868"]=true,["112809109188560"]=true,
+    ["136323728355613"]=true,["115026634746636"]=true,["84116622032112"]=true,
+    ["108907358619313"]=true,["127793641088496"]=true,["86174610237192"]=true,
+    ["95079963655241"]=true,["101199185291628"]=true,["119942598489800"]=true,
+    ["84307400688050"]=true,["113037804008732"]=true,["105200830849301"]=true,
+    ["75330693422988"]=true,["82221759983649"]=true,["81702359653578"]=true,
+    ["108610718831698"]=true,["112395455254818"]=true,["109431876587852"]=true,
+    ["109348678063422"]=true,["85853080745515"]=true,["12222216"]=true,
+    ["105840448036441"]=true,["114742322778642"]=true,["119583605486352"]=true,
+    ["79980897195554"]=true,["71805956520207"]=true,["79391273191671"]=true,
+    ["89004992452376"]=true,["101553872555606"]=true,["101698569375359"]=true,
+    ["106300477136129"]=true,["116581754553533"]=true,["117231507259853"]=true,
+    ["119089145505438"]=true,["121954639447247"]=true,["125213046326879"]=true,
+    ["131406927389838"]=true,["71834552297085"]=true,["86833981571073"]=true,
+    ["110372418055226"]=true,["86494585504534"]=true,["80516583309685"]=true,
+    ["140412278320643"]=true,["117173212095661"]=true,["104910828105172"]=true,
+    ["140194172008986"]=true,["85544168523099"]=true,["114506382930939"]=true,
+    ["99829427721752"]=true,["120059928759346"]=true,["104625283622511"]=true,
+    ["105316545074913"]=true,["126131675979001"]=true,["82336352305186"]=true,
+    ["93366464803829"]=true,["84069821282466"]=true,["128856426573270"]=true,
+    ["128195973631079"]=true,["124903763333174"]=true,["94317217837143"]=true,
+    ["98111231282218"]=true,["136728245733659"]=true,["107444859834748"]=true,
+    ["76959687420003"]=true,["72425554233832"]=true,["96594507550917"]=true,
+    ["139996647355899"]=true,["107345261604889"]=true,["127557531826290"]=true,
+    ["108651070773439"]=true,["74842815979546"]=true,["124397369810639"]=true,
+    ["76467993976301"]=true,["118493324723683"]=true,["78298577002481"]=true,
+    ["116527305931161"]=true,["5148302439"]=true,["98675142200448"]=true,
+    ["128367348686124"]=true,["103684883268194"]=true,["109246041199659"]=true,
+    ["80540530406270"]=true,["139523195429581"]=true,["105204810054381"]=true,
+    ["116468089135195"]=true,["133709029886490"]=true,["124234993291213"]=true,
+    ["98733709078792"]=true,["99856718263455"]=true,["74809026448465"]=true,
+}
+
+-- Blockable anim IDs (full list from open-source)
+local BlockableAnimIds = {
+    "114506382930939","127245564598429","99829427721752",
+    "138938529389204","111647315359080","92567970681901",
+    "124269076578545","94958041603347","109667959938617",
+    "130958529065375","118298475669935","126830014841198",
+    "126355327951215","121086746534252","18885909645",
+    "98456918873918","105458270463374","83829782357897",
+    "125403313786645","82113744478546","70371667919898",
+    "99135633258223","7167027849946","109230267448394",
+    "139835501033932","126996426760253","88451353906104",
+    "106538427162796","122709416391891","139309647473555",
+    "90620531468240","91509234639766","99824350842479",
+    "126171487400618","101101433684051","106860049270347",
+    "70483423693126","126727756047566","137642639873297",
+    "77375846492436","126681776859538","129976080405072",
+    "121293883585738","81639435858902","137314737492715",
+    "92173139187970","108196996477620","90819435118493",
+    "123172382755876",
+}
+-- Convert to set for O(1) lookup
+local BlockableAnimSet = {}
+for _, id in ipairs(BlockableAnimIds) do BlockableAnimSet[id] = true end
+
+-- Block-reset anims (from open-source)
+local BlockResetAnims = {
+    ["96959123077498"]=true,["72722244508749"]=true,
+    ["95802026624883"]=true,["100926346851492"]=true,["140671644163156"]=true,
+}
+
+-- Punch/aimbot trigger anims (from open-source)
+local PunchAnimIds = {
+    "87259391926321","99100240941590","72685103823181","81905101227053",
+    "113936304594883","140703210927645","136007065400978","129843313690921",
+    "86709774283672","108807732150251","138040001965654","86096387000557",
+    "119850211147676","131696603025265","119462383658044","116618003477002",
+    "133491532453922","76649505662612","71190646367497","121255898612475",
+    "103601716322988","86371356500204","72722244508749","96959123077498",
+}
+local PunchAnimSet = {}
+for _, id in ipairs(PunchAnimIds) do PunchAnimSet[id] = true end
+
+-- Blockable attack names (animation name path)
+local BlockableAttacks = {
+    ["slash"]=true,["punch"]=true,["stab"]=true,
+    ["lacerate"]=true,["carvingslash"]=true,["eviscerate"]=true,
+}
+
+-- Killer delay map for auto-adjust (from open-source)
+local KillerDelayMap = {
+    ["c00lkidd"]=0,["nosferatu"]=0.15,["slasher"]=0.01,
+    ["1x1x1x1"]=0.15,["johndoe"]=0.33,["noli"]=0.15,["azure"]=0.02,
+}
+
+-- ─────────────────────────────────────────────────────────────
+-- Settings
+-- ─────────────────────────────────────────────────────────────
+local Settings = {
+    -- Block
+    AutoBlock       = false,
+    SoundMode       = true,
+    AnimIDMode      = true,
+    AnimNameMode    = true,
+    WallCheck       = false,
+    FacingCheck     = true,
+    FacingDot       = 0.3,
+    DetectionRange  = 18,
+    BlockDelay      = 0,
+    -- HDT
+    HDT             = true,
+    HDTDuration     = 2.0,
+    -- Cone check
+    UseConeCheck    = true,
+    ConeLength      = 15,
+    ConeAngle       = 60,
+    -- Box check
+    UseBoxCheck     = true,
+    BoxWidth        = 8,
+    BoxLength       = 12,
+    BoxHeight       = 6,
+    -- Visuals
+    DetectionCircle = false,
+    FacingVisual    = false,
+    -- Stamina
+    InfiniteStamina = false,
+    MaxStamina      = sprintModule.MaxStamina,
+    SprintSpeed     = sprintModule.SprintSpeed,
+    StaminaGain     = sprintModule.StaminaGain,
+    StaminaDrain    = sprintModule.StaminaDrain or 1,
+    RegenDelay      = sprintModule.StaminaRegenDelay or 0.5,
+    -- Aimbot
+    PunchAimbot     = false,
     -- ESP
-    ESP              = false,
-    ESPMurderer      = true,
-    ESPSheriff       = true,
-    ESPInnocent      = false,
-    ESPGunDrop       = true,
-    -- CamLock
-    CamLock          = false,
-    CamLockKey       = "Q",
-    CamLockSmooth    = 0.16,
-    -- Debug
-    DebugRemote      = false,
-}
-getgenv().LarperHub_Settings = S
-
---// ROLE CACHE (Elite Scripts pattern)[reference:1]
-local roleCache = {}
-
-local function getRole(plr)
-    if plr == LocalPlayer then return "LocalPlayer" end
-    if roleCache[plr] and tick() - roleCache[plr]._t < 0.8 then
-        return roleCache[plr].role
-    end
-    local char = plr.Character
-    if not char then
-        roleCache[plr] = { role = "None", _t = tick() }
-        return "None"
-    end
-
-    local hasKnife, hasGun = false, false
-    -- Scan equipped tools
-    for _, tool in ipairs(char:GetChildren()) do
-        if tool:IsA("Tool") then
-            local n = tool.Name:lower()
-            if n:find("knife") or n:find("blade") or n:find("dagger") or n:find("sword") then
-                hasKnife = true
-            elseif n:find("gun") or n:find("revolver") or n:find("pistol") then
-                hasGun = true
-            end
-        end
-    end
-    -- Scan backpack
-    local bp = plr:FindFirstChild("Backpack")
-    if bp then
-        for _, tool in ipairs(bp:GetChildren()) do
-            if tool:IsA("Tool") then
-                local n = tool.Name:lower()
-                if n:find("knife") or n:find("blade") or n:find("dagger") then
-                    hasKnife = true
-                elseif n:find("gun") or n:find("revolver") or n:find("pistol") then
-                    hasGun = true
-                end
-            end
-        end
-    end
-
-    -- Attribute fallback
-    local role = "Innocent"
-    local attr = plr:GetAttribute("Role") or char:GetAttribute("Role")
-    if attr then
-        local r = tostring(attr):lower()
-        if r:find("murder") then role = "Murderer"
-        elseif r:find("sheriff") or r:find("hero") then role = "Sheriff"
-        elseif r:find("innocent") then role = "Innocent" end
-    elseif hasKnife then role = "Murderer"
-    elseif hasGun then role = "Sheriff"
-    end
-
-    roleCache[plr] = { role = role, _t = tick() }
-    return role
-end
-
---// SILENT AIM HELPERS
-local ValidTargetParts = { "Head", "HumanoidRootPart" }
-local ExpectedArguments = {
-    FindPartOnRayWithIgnoreList   = { ArgCountRequired = 3, Args = { "Instance", "Ray", "table", "boolean", "boolean" } },
-    FindPartOnRayWithWhitelist    = { ArgCountRequired = 3, Args = { "Instance", "Ray", "table", "boolean" } },
-    FindPartOnRay                 = { ArgCountRequired = 2, Args = { "Instance", "Ray", "Instance", "boolean", "boolean" } },
-    Raycast                       = { ArgCountRequired = 3, Args = { "Instance", "Vector3", "Vector3", "RaycastParams" } },
+    ESPKillers      = false,
+    ESPSurvivors    = false,
+    ESPGenerators   = false,
+    ESPMedkits      = false,
+    ESPBloxyCola    = false,
+    -- Misc
+    Fullbright      = false,
+    Debug           = false,
+    AutoAdjustDelay = false,
 }
 
-local function validateArgs(args, expected)
-    if #args < expected.ArgCountRequired then return false end
-    local matches = 0
-    for i, a in ipairs(args) do
-        if typeof(a) == expected.Args[i] then matches = matches + 1 end
-    end
-    return matches >= expected.ArgCountRequired
+-- ─────────────────────────────────────────────────────────────
+-- Runtime state
+-- ─────────────────────────────────────────────────────────────
+local hookedKillers     = {}
+local soundHooks        = {}
+local soundBlockedUntil = {}
+local killerState       = {}
+local lastBlockAt       = 0
+local totalBlocks       = 0
+local blockLabel        = nil
+local COOLDOWN          = 0.35
+local LEAD              = 0.02
+local SWEEP_WINDOW      = 0.55
+local SWEEP_MUL         = 2.5
+local blockDelay        = 0
+local folderAddedConn   = nil
+local folderRemovedConn = nil
+-- HDT
+local hdtConn           = nil
+-- Aimbot
+local aimConn           = nil
+local aimActive         = false
+-- Stamina
+local staminaConn       = nil
+-- ESP
+local espHighlights     = {}
+local espBillboards     = {}
+local espGenConns       = {}
+local espRunConn        = nil
+-- Visuals
+local detectionCircles  = {}
+local facingVisuals     = {}
+-- Fullbright
+local originalLighting  = {}
+-- Killer delay
+local autoDelayTicker   = 0
+local manualBlockDelay  = 0
+
+-- UI refs (real Forsaken UI path — confirmed from open-source)
+local cachedBlockBtn, cachedCooldown, cachedPunchBtn, cachedCharges
+
+local function refreshUIRefs()
+    local gui = PlayerGui:FindFirstChild("MainUI")
+    if not gui then return end
+    local ac = gui:FindFirstChild("AbilityContainer")
+    if not ac then return end
+    cachedBlockBtn  = ac:FindFirstChild("Block")
+    cachedCooldown  = cachedBlockBtn and cachedBlockBtn:FindFirstChild("CooldownTime")
+    cachedPunchBtn  = ac:FindFirstChild("Punch")
+    cachedCharges   = cachedPunchBtn and cachedPunchBtn:FindFirstChild("Charges")
 end
 
-local function hitChance()
-    local p = math.floor(S.HitChance)
-    return math.random() <= p / 100
-end
-
-local function isVisible(plr)
-    local char = plr.Character
-    local lchar = LocalPlayer.Character
-    if not char or not lchar then return false end
-    local root = FindFirstChild(char, S.TargetPart) or FindFirstChild(char, "HumanoidRootPart")
-    if not root then return false end
-    local cast = { root.Position, lchar }
-    local ignore = { lchar, char }
-    return #Camera:GetPartsObscuringTarget(cast, ignore) == 0
-end
-
-local function getTarget()
-    local closest, bestDist = nil, S.FOV
-    local mousePos = GetMouseLocation(UserInputService)
-
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr == LocalPlayer then continue end
-        if S.TeamCheck and plr.Team == LocalPlayer.Team then continue end
-        if S.VisibleCheck and not isVisible(plr) then continue end
-
-        local char = plr.Character
-        if not char then continue end
-        local hum = FindFirstChild(char, "Humanoid")
-        if not hum or hum.Health <= 0 then continue end
-        local hrp = FindFirstChild(char, "HumanoidRootPart")
-        if not hrp then continue end
-
-        local screen, onScreen = WorldToViewport(Camera, hrp.Position)
-        if not onScreen then continue end
-
-        local d = (mousePos - Vector2.new(screen.X, screen.Y)).Magnitude
-        if d < bestDist then
-            bestDist = d
-            local part
-            if S.TargetPart == "Random" then
-                part = char[ValidTargetParts[math.random(1, #ValidTargetParts)]]
-            else
-                part = char[S.TargetPart]
-            end
-            closest = part or hrp
-        end
-    end
-    return closest
-end
-
---// GUN REMOTE DISCOVERY
--- Scans ReplicatedStorage for RemoteEvents whose names suggest shooting.
-local gunRemotes = {}
-local function collectGunRemotes()
-    gunRemotes = {}
-    for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("RemoteEvent") then
-            local n = obj.Name:lower()
-            if n:find("shoot") or n:find("fire") or n:find("gun") or n:find("bullet") then
-                table.insert(gunRemotes, obj)
-                if S.DebugRemote then
-                    print("[LarperHub] Gun remote found:", obj:GetFullName())
-                end
-            end
-        end
-    end
-end
-collectGunRemotes()
--- Re-scan when the game adds remotes later
-ReplicatedStorage.DescendantAdded:Connect(function(d)
-    if d:IsA("RemoteEvent") then
-        local n = d.Name:lower()
-        if n:find("shoot") or n:find("fire") or n:find("gun") or n:find("bullet") then
-            table.insert(gunRemotes, d)
-        end
-    end
+refreshUIRefs()
+PlayerGui.ChildAdded:Connect(function(c)
+    if c.Name == "MainUI" then task.delay(0.05, refreshUIRefs) end
 end)
 
---// ESP
-local espCache = {}
+-- ─────────────────────────────────────────────────────────────
+-- Character respawn
+-- ─────────────────────────────────────────────────────────────
+LocalPlayer.CharacterAdded:Connect(function(c)
+    LocalCharacter = c
+    LocalRoot      = c:WaitForChild("HumanoidRootPart")
+    task.wait(0.3)
+    refreshUIRefs()
+    SetupLocalCharacter(c)
+    if Settings.AutoBlock then StartWatching() end
+end)
 
-local function clearESP()
-    for _, data in pairs(espCache) do
-        if data.hl then data.hl:Destroy() end
-        if data.bb then data.bb:Destroy() end
-    end
-    espCache = {}
+-- ─────────────────────────────────────────────────────────────
+-- Helpers
+-- ─────────────────────────────────────────────────────────────
+local function normalize(s) return s:lower():gsub("%s+","") end
+
+-- Wall check (raycast, from open-source)
+local function hasLOS(targetHRP)
+    if not Settings.WallCheck then return true end
+    if not (LocalRoot and targetHRP) then return true end
+    local dir = targetHRP.Position - LocalRoot.Position
+    local rp  = RaycastParams.new()
+    rp.FilterType = Enum.RaycastFilterType.Exclude
+    rp.FilterDescendantsInstances = {LocalCharacter, targetHRP.Parent}
+    rp.IgnoreWater = true
+    local result = workspace:Raycast(LocalRoot.Position, dir, rp)
+    return result == nil
 end
 
-local function buildESP(plr, role)
-    if espCache[plr] then return end
-    local char = plr.Character
-    if not char then return end
+-- Cone check
+local function inCone(kr)
+    if not (LocalRoot and kr) then return false end
+    local diff = kr.Position - LocalRoot.Position
+    if diff.Magnitude > Settings.ConeLength then return false end
+    if diff.Magnitude == 0 then return true end
+    return LocalRoot.CFrame.LookVector:Dot(diff.Unit) >= math.cos(math.rad(Settings.ConeAngle/2))
+end
 
-    local color
-    if role == "Murderer" then color = Color3.fromRGB(255, 55, 55)
-    elseif role == "Sheriff" then color = Color3.fromRGB(55, 140, 255)
-    else color = Color3.fromRGB(80, 220, 120) end
+-- Box check
+local function inBox(kr)
+    if not (LocalRoot and kr) then return false end
+    local diff  = kr.Position - LocalRoot.Position
+    local fwd   = diff:Dot(LocalRoot.CFrame.LookVector)
+    local lat   = diff:Dot(LocalRoot.CFrame.RightVector)
+    local vert  = diff:Dot(LocalRoot.CFrame.UpVector)
+    return fwd  >= 0 and fwd  <= Settings.BoxLength
+       and math.abs(lat)  <= Settings.BoxWidth/2
+       and math.abs(vert) <= Settings.BoxHeight/2
+end
 
-    local hl = Instance.new("Highlight")
-    hl.FillColor = color
-    hl.OutlineColor = color
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Parent = char
-
-    local bb
-    local head = FindFirstChild(char, "Head")
-    if head then
-        bb = Instance.new("BillboardGui")
-        bb.Adornee = head
-        bb.Size = UDim2.new(0, 220, 0, 50)
-        bb.StudsOffset = Vector3.new(0, 2.4, 0)
-        bb.AlwaysOnTop = true
-
-        local txt = Instance.new("TextLabel")
-        txt.Size = UDim2.new(1, 0, 1, 0)
-        txt.BackgroundTransparency = 1
-        txt.Text = role .. " | " .. plr.Name
-        txt.TextColor3 = color
-        txt.TextScaled = true
-        txt.Font = Enum.Font.SourceSansBold
-        txt.Parent = bb
-        bb.Parent = char
+local function passesDetection(kr)
+    if not (Settings.UseConeCheck or Settings.UseBoxCheck) then
+        if not (LocalRoot and kr) then return false end
+        return (kr.Position - LocalRoot.Position).Magnitude <= Settings.DetectionRange
     end
-    espCache[plr] = { hl = hl, bb = bb }
+    if Settings.UseConeCheck and inCone(kr) then return true end
+    if Settings.UseBoxCheck  and inBox(kr)  then return true end
+    return false
+end
+
+-- Facing check (from open-source: checks killer's LookVector toward us)
+local function isFacing(kr)
+    if not Settings.FacingCheck then return true end
+    if not (LocalRoot and kr) then return true end
+    local diff = LocalRoot.Position - kr.Position
+    if diff.Magnitude == 0 then return true end
+    return kr.CFrame.LookVector:Dot(diff.Unit) > Settings.FacingDot
+end
+
+local function getNearestKillerRoot()
+    if not LocalRoot then return nil, nil end
+    local nearest, nearDist, nearModel = nil, math.huge, nil
+    for _, k in ipairs(KillersFolder:GetChildren()) do
+        local kr  = k:FindFirstChild("HumanoidRootPart")
+        local hum = k:FindFirstChildOfClass("Humanoid")
+        if kr and hum and hum.MaxHealth > 500 then
+            local d = (LocalRoot.Position - kr.Position).Magnitude
+            if d < nearDist then nearDist=d; nearest=kr; nearModel=k end
+        end
+    end
+    return nearest, nearModel
+end
+
+local function extractSoundId(sound)
+    if not sound then return nil end
+    local sid = tostring(sound.SoundId or "")
+    return sid:match("rbxassetid://(%d+)") or sid:match("://(%d+)") or sid:match("^(%d+)$")
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Auto-adjust block delay per killer (from open-source)
+-- ─────────────────────────────────────────────────────────────
+local function applyDelayForKiller(killerModel)
+    if not Settings.AutoAdjustDelay then blockDelay = manualBlockDelay; return end
+    if not killerModel then blockDelay = manualBlockDelay; return end
+    local key = killerModel.Name:lower()
+    blockDelay = KillerDelayMap[key] or manualBlockDelay
+end
+
+RunService.Heartbeat:Connect(function(dt)
+    if not Settings.AutoAdjustDelay then return end
+    autoDelayTicker += dt
+    if autoDelayTicker < 0.15 then return end
+    autoDelayTicker = 0
+    local _, km = getNearestKillerRoot()
+    applyDelayForKiller(km)
+end)
+
+KillersFolder.ChildAdded:Connect(function()
+    task.delay(0.05, function()
+        local _, km = getNearestKillerRoot(); applyDelayForKiller(km)
+    end)
+end)
+
+-- ─────────────────────────────────────────────────────────────
+-- HDT
+-- ─────────────────────────────────────────────────────────────
+local function StopHDT()
+    if hdtConn then hdtConn:Disconnect(); hdtConn=nil end
+end
+
+local function StartHDT(kr, duration)
+    if not Settings.HDT or not (kr and kr.Parent) then return end
+    StopHDT()
+    local t0  = tick()
+    local cam = workspace.CurrentCamera
+    hdtConn = RunService.RenderStepped:Connect(function()
+        if tick()-t0 >= duration then StopHDT(); return end
+        if not (kr and kr.Parent and LocalRoot and LocalRoot.Parent) then StopHDT(); return end
+        local flat = Vector3.new(kr.Position.X-LocalRoot.Position.X, 0, kr.Position.Z-LocalRoot.Position.Z)
+        if flat.Magnitude > 0 then
+            LocalRoot.CFrame = CFrame.new(LocalRoot.Position, LocalRoot.Position+flat.Unit)
+        end
+        if cam then cam.CFrame = CFrame.new(cam.CFrame.Position, kr.Position) end
+    end)
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- FireBlock — single entry point
+-- ─────────────────────────────────────────────────────────────
+local function FireBlock(reason, kr)
+    if tick()-lastBlockAt < COOLDOWN then return end
+    -- Check UI cooldown (real Forsaken UI path)
+    if not cachedCooldown then refreshUIRefs() end
+    if cachedCooldown and cachedCooldown.Text ~= "" then return end
+
+    if blockDelay > 0 then task.wait(blockDelay) end
+
+    lastBlockAt = tick()
+    fireRemoteBlock()
+
+    totalBlocks += 1
+    if blockLabel then blockLabel:Set({Title="Blocks fired: "..totalBlocks}) end
+    if kr then StartHDT(kr, Settings.HDTDuration) end
+
+    WindUI:Notify({
+        Title="Blocked!", Content=(reason or "Attack")..(Settings.HDT and " | HDT" or ""),
+        Icon="solar:shield-bold", Duration=2,
+    })
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Aimbot (from open-source: tracks killer's predicted position)
+-- ─────────────────────────────────────────────────────────────
+local PRED_VALUE = 4
+
+local function StopAim()
+    if aimConn then aimConn:Disconnect(); aimConn=nil end
+    aimActive=false
+    local char = LocalCharacter
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then pcall(function() hum.AutoRotate=true end) end
+    end
+end
+
+local function StartAim(root, duration)
+    if aimConn then aimConn:Disconnect() end
+    aimActive=true
+    local char = LocalCharacter
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then pcall(function() hum.AutoRotate=false end) end
+    local t0 = tick()
+    aimConn = RunService.RenderStepped:Connect(function()
+        if not aimActive or not Settings.PunchAimbot then StopAim(); return end
+        if tick()-t0 >= (duration or 0.8) then StopAim(); return end
+        local kr = getNearestKillerRoot()
+        if not (kr and root and root.Parent) then return end
+        local pred = kr.Position + (kr.CFrame.LookVector * PRED_VALUE)
+        pcall(function() root.CFrame = CFrame.lookAt(root.Position, pred) end)
+        local cam = workspace.CurrentCamera
+        if cam then cam.CFrame = CFrame.new(cam.CFrame.Position, pred) end
+    end)
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Sound hook system (from open-source, full implementation)
+-- ─────────────────────────────────────────────────────────────
+local function getCharFromDescendant(inst)
+    if not inst then return nil end
+    local m = inst:FindFirstAncestorOfClass("Model")
+    return (m and m:FindFirstChildOfClass("Humanoid")) and m or nil
+end
+
+local function attemptBlockForSound(sound, id)
+    if not Settings.AutoBlock or not Settings.SoundMode then return end
+    if not sound or not sound:IsA("Sound") or not sound.IsPlaying then return end
+    if not id or not BlockSounds[id] then return end
+    local now = tick()
+    if soundBlockedUntil[sound] and now < soundBlockedUntil[sound] then return end
+    if now - lastBlockAt < 0.35 then return end
+
+    local char = getCharFromDescendant(sound)
+    local hr   = char and char:FindFirstChild("HumanoidRootPart")
+    if not hr then return end
+
+    local plr = Players:GetPlayerFromCharacter(char)
+    if not plr or plr == LocalPlayer then return end
+
+    if not hasLOS(hr) then return end
+    if not passesDetection(hr) then return end
+    if not isFacing(hr) then return end
+    if not (LocalCharacter and LocalCharacter.Parent == SurvivorsFolder) then return end
+
+    soundBlockedUntil[sound] = now + 1.0
+    task.spawn(function()
+        FireBlock("sound:"..sound.Name, hr)
+    end)
+end
+
+local function hookSound(sound)
+    if not sound or not sound:IsA("Sound") then return end
+    if soundHooks[sound] then return end
+    local id = extractSoundId(sound)
+    soundHooks[sound] = true
+    local function handle() attemptBlockForSound(sound, id) end
+    local c1 = sound.Played:Connect(handle)
+    local c2 = sound:GetPropertyChangedSignal("IsPlaying"):Connect(function()
+        if sound.IsPlaying then handle() end
+    end)
+    local cd; cd = sound.Destroying:Connect(function()
+        c1:Disconnect(); c2:Disconnect(); cd:Disconnect()
+        soundHooks[sound]=nil; soundBlockedUntil[sound]=nil
+    end)
+    if sound.IsPlaying then handle() end
+end
+
+for _, d in ipairs(KillersFolder:GetDescendants()) do
+    if d:IsA("Sound") then hookSound(d) end
+end
+KillersFolder.DescendantAdded:Connect(function(d)
+    if d:IsA("Sound") then hookSound(d) end
+end)
+
+-- ─────────────────────────────────────────────────────────────
+-- SetupLocalCharacter
+-- ─────────────────────────────────────────────────────────────
+function SetupLocalCharacter(char)
+    local hum  = char:WaitForChild("Humanoid", 10); if not hum  then return end
+    local anim = hum:WaitForChild("Animator",   10); if not anim then return end
+    local root = char:WaitForChild("HumanoidRootPart", 10); if not root then return end
+
+    anim.AnimationPlayed:Connect(function(track)
+        local id = tostring(track.Animation and track.Animation.AnimationId or ""):match("%d+") or ""
+        if PunchAnimSet[id] and Settings.PunchAimbot then
+            StartAim(root, 0.8)
+            track.Stopped:Connect(StopAim)
+        end
+    end)
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- SetupKiller — triple-path: Sound + Anim ID + Anim Name
+-- ─────────────────────────────────────────────────────────────
+local function SetupKiller(killer)
+    if hookedKillers[killer] then return end
+    local hum = killer:FindFirstChildOfClass("Humanoid") or killer:WaitForChild("Humanoid",5)
+    if not hum then return end
+    local anim = hum:FindFirstChildOfClass("Animator") or hum:WaitForChild("Animator",5)
+    if not anim then return end
+    local kr   = killer:FindFirstChild("HumanoidRootPart") or killer:WaitForChild("HumanoidRootPart",5)
+    if not kr  then return end
+
+    local conns = {}
+
+    -- PATH 1: Sound (full hook already handled globally above)
+    -- PATH 2: Animation ID check
+    table.insert(conns, anim.AnimationPlayed:Connect(function(track)
+        if not Settings.AutoBlock or not Settings.AnimIDMode then return end
+        local id = tostring(track.Animation and track.Animation.AnimationId or ""):match("%d+") or ""
+        if not BlockableAnimSet[id] then return end
+        if not (LocalCharacter and LocalCharacter.Parent == SurvivorsFolder) then return end
+        if not passesDetection(kr) then return end
+        if not isFacing(kr) then return end
+        if not hasLOS(kr) then return end
+        task.delay(LEAD, function()
+            if not passesDetection(kr) then return end
+            FireBlock("animID:"..id, kr)
+        end)
+    end))
+
+    -- PATH 3: Animation Name check
+    table.insert(conns, anim.AnimationPlayed:Connect(function(track)
+        if not Settings.AutoBlock or not Settings.AnimNameMode then return end
+        local lower = normalize(track.Name)
+        if not BlockableAttacks[lower] then return end
+        if not (LocalCharacter and LocalCharacter.Parent == SurvivorsFolder) then return end
+        if not passesDetection(kr) then return end
+        if not isFacing(kr) then return end
+        if not hasLOS(kr) then return end
+        task.delay(LEAD, function()
+            if not passesDetection(kr) then return end
+            FireBlock("animName:"..track.Name, kr)
+        end)
+
+        -- Sweep confirmation
+        local lh = LocalCharacter and LocalCharacter:FindFirstChild("QueryHitbox")
+        if not lh or not Settings.AnimIDMode then return end
+        local sweepStop = tick() + math.min(track.Length>0 and track.Length or SWEEP_WINDOW, SWEEP_WINDOW)
+        local sp = OverlapParams.new()
+        sp.FilterType = Enum.RaycastFilterType.Include; sp.MaxParts=1
+        local sweepConn
+        sweepConn = RunService.PreSimulation:Connect(function()
+            if tick()>sweepStop or not Settings.AutoBlock then sweepConn:Disconnect(); return end
+            local kh = killer:FindFirstChild("QueryHitbox")
+            lh = LocalCharacter and LocalCharacter:FindFirstChild("QueryHitbox")
+            if not (kh and lh) then sweepConn:Disconnect(); return end
+            sp.FilterDescendantsInstances={lh}
+            local p=Instance.new("Part")
+            p.Size=Vector3.new(5.2,6,5.65)*SWEEP_MUL; p.CFrame=kh.CFrame*CFrame.new(0,0,-3.5)
+            p.CanCollide=false; p.Anchored=true; p.CastShadow=false; p.Transparency=1; p.Parent=workspace
+            local hit=#workspace:GetPartsInPart(p,sp)>0; p:Destroy()
+            if hit then FireBlock("sweep:"..track.Name,kr); sweepConn:Disconnect() end
+        end)
+        table.insert(conns, sweepConn)
+    end))
+
+    -- Cleanup
+    local cleanConn; cleanConn=killer.AncestorChanged:Connect(function()
+        if not killer:IsDescendantOf(workspace) then
+            for _,c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+            cleanConn:Disconnect(); hookedKillers[killer]=nil
+        end
+    end)
+    hookedKillers[killer]=conns
+
+    WindUI:Notify({Title="Killer Tracked",Content="Watching: "..killer.Name,
+        Icon="solar:eye-bold",Duration=3})
+end
+
+local function StartWatching()
+    for _,k in ipairs(KillersFolder:GetChildren()) do task.spawn(SetupKiller,k) end
+    if not folderAddedConn then
+        folderAddedConn=KillersFolder.ChildAdded:Connect(function(k) task.wait(0.5); SetupKiller(k) end)
+    end
+    if not folderRemovedConn then
+        folderRemovedConn=KillersFolder.ChildRemoved:Connect(function(k)
+            local conns=hookedKillers[k]
+            if type(conns)=="table" then for _,c in ipairs(conns) do pcall(function() c:Disconnect() end) end end
+            hookedKillers[k]=nil
+        end)
+    end
+end
+
+local function StopWatching()
+    if folderAddedConn   then folderAddedConn:Disconnect();   folderAddedConn=nil   end
+    if folderRemovedConn then folderRemovedConn:Disconnect(); folderRemovedConn=nil end
+    for _,conns in pairs(hookedKillers) do
+        if type(conns)=="table" then for _,c in ipairs(conns) do pcall(function() c:Disconnect() end) end end
+    end
+    hookedKillers={}; StopHDT()
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Infinite Stamina (real module path from open-source)
+-- ─────────────────────────────────────────────────────────────
+local function EnableStamina()
+    if staminaConn then return end
+    staminaConn = RunService.Heartbeat:Connect(function()
+        if not Settings.InfiniteStamina then return end
+        sprintModule.MaxStamina       = Settings.MaxStamina
+        sprintModule.SprintSpeed      = Settings.SprintSpeed
+        sprintModule.StaminaGain      = Settings.StaminaGain
+        sprintModule.StaminaDrain     = Settings.StaminaDrain
+        sprintModule.StaminaRegenDelay= Settings.RegenDelay
+        sprintModule.Stamina          = sprintModule.MaxStamina
+    end)
+end
+local function DisableStamina()
+    if staminaConn then staminaConn:Disconnect(); staminaConn=nil end
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- ESP system (Highlight + BillboardGui with distance label)
+-- ─────────────────────────────────────────────────────────────
+local ESPColors = {
+    killer   = Color3.fromRGB(255,50,50),
+    survivor = Color3.fromRGB(50,200,255),
+    generator= Color3.fromRGB(255,220,0),
+    medkit   = Color3.fromRGB(255,105,180),
+    bloxycola= Color3.fromRGB(0,150,255),
+}
+
+local function makeHighlight(model, color, fillTransp)
+    if model:FindFirstChild("_LarpESP") then return end
+    local h = Instance.new("Highlight")
+    h.Name="._LarpESP"; h.Adornee=model
+    h.FillColor=color; h.OutlineColor=color
+    h.FillTransparency=fillTransp or 0.7; h.OutlineTransparency=0
+    h.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; h.Parent=model
+    espHighlights[model]=h
+    return h
+end
+
+local function makeBillboard(model, label)
+    local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+    if not root then return end
+    local bb = Instance.new("BillboardGui")
+    bb.Name="_LarpBB"; bb.Size=UDim2.new(0,100,0,30)
+    bb.StudsOffset=Vector3.new(0,3.5,0); bb.AlwaysOnTop=true
+    bb.MaxDistance=1000; bb.Adornee=root; bb.Parent=model
+    local lbl=Instance.new("TextLabel")
+    lbl.Name="_lbl"; lbl.Size=UDim2.new(1,0,1,0)
+    lbl.BackgroundTransparency=1; lbl.TextColor3=Color3.new(1,1,1)
+    lbl.TextStrokeTransparency=0.4; lbl.TextSize=14
+    lbl.Font=Enum.Font.SourceSansBold; lbl.Text=label or model.Name
+    lbl.Parent=bb
+    espBillboards[model]=bb
+    return bb, lbl
+end
+
+local function removeESP(model)
+    local h=espHighlights[model]; if h and h.Parent then h:Destroy() end; espHighlights[model]=nil
+    local b=espBillboards[model]; if b and b.Parent then b:Destroy() end; espBillboards[model]=nil
+    local c=espGenConns[model]; if c then pcall(function() c:Disconnect() end); espGenConns[model]=nil end
+end
+
+local function clearESPCategory(filter)
+    for model, _ in pairs(espHighlights) do
+        if filter(model) then removeESP(model) end
+    end
+end
+
+local function setupGeneratorESP(obj)
+    if not obj or not obj.Parent then return end
+    makeHighlight(obj, ESPColors.generator)
+    local _, lbl = makeBillboard(obj, "Generator (0%)")
+    local prog = obj:FindFirstChild("Progress")
+    if prog and lbl then
+        lbl.Text = "Generator ("..math.floor(prog.Value).."%)"
+        local c = prog.Changed:Connect(function()
+            if lbl.Parent then lbl.Text="Generator ("..math.floor(prog.Value).."%)" end
+        end)
+        espGenConns[obj]=c
+    end
 end
 
 local function refreshESP()
-    if not S.ESP then
-        if next(espCache) then clearESP() end
-        return
-    end
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr == LocalPlayer then continue end
-        local role = getRole(plr)
-        if role == "None" then continue end
-
-        local show =
-            (role == "Murderer" and S.ESPMurderer) or
-            (role == "Sheriff" and S.ESPSheriff) or
-            (role == "Innocent" and S.ESPInnocent)
-
-        if show then buildESP(plr, role)
-        elseif espCache[plr] then
-            if espCache[plr].hl then espCache[plr].hl:Destroy() end
-            if espCache[plr].bb then espCache[plr].bb:Destroy() end
-            espCache[plr] = nil
+    -- Killers
+    for model, _ in pairs(espHighlights) do
+        local isKiller    = model:IsDescendantOf(KillersFolder)
+        local isSurvivor  = model:IsDescendantOf(SurvivorsFolder)
+        local isGenerator = model.Name == "Generator"
+        local isItem      = model.Name == "Medkit" or model.Name == "BloxyCola"
+        if (isKiller and not Settings.ESPKillers) or
+           (isSurvivor and not Settings.ESPSurvivors) or
+           (isGenerator and not Settings.ESPGenerators) or
+           (isItem and not Settings.ESPMedkits and not Settings.ESPBloxyCola) then
+            removeESP(model)
         end
     end
-
-    -- Dropped gun
-    local normal = Workspace:FindFirstChild("Normal")
-    local drop = normal and normal:FindFirstChild("GunDrop")
-    if drop and S.ESPGunDrop and not espCache["GunDrop"] then
-        local hl = Instance.new("Highlight")
-        hl.FillColor = Color3.fromRGB(255, 255, 0)
-        hl.OutlineColor = Color3.fromRGB(255, 255, 0)
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        hl.Parent = drop
-        espCache["GunDrop"] = { hl = hl }
-    elseif not S.ESPGunDrop and espCache["GunDrop"] then
-        if espCache["GunDrop"].hl then espCache["GunDrop"].hl:Destroy() end
-        espCache["GunDrop"] = nil
+    if Settings.ESPKillers then
+        for _,k in ipairs(KillersFolder:GetChildren()) do
+            if k:FindFirstChildOfClass("Humanoid") and not espHighlights[k] then
+                makeHighlight(k, ESPColors.killer); makeBillboard(k, k.Name)
+            end
+        end
+    end
+    if Settings.ESPSurvivors then
+        for _,s in ipairs(SurvivorsFolder:GetChildren()) do
+            if s ~= LocalCharacter and s:FindFirstChildOfClass("Humanoid") and not espHighlights[s] then
+                makeHighlight(s, ESPColors.survivor); makeBillboard(s, s.Name)
+            end
+        end
+    end
+    if Settings.ESPGenerators then
+        for _,obj in ipairs(workspace:GetDescendants()) do
+            if obj.Name=="Generator" and obj:IsA("Model") and not espHighlights[obj] then
+                setupGeneratorESP(obj)
+            end
+        end
+    end
+    if Settings.ESPMedkits or Settings.ESPBloxyCola then
+        for _,obj in ipairs(workspace:GetDescendants()) do
+            local isM = obj.Name=="Medkit" and Settings.ESPMedkits
+            local isB = obj.Name=="BloxyCola" and Settings.ESPBloxyCola
+            if (isM or isB) and not espHighlights[obj] then
+                makeHighlight(obj, isM and ESPColors.medkit or ESPColors.bloxycola, 0.5)
+            end
+        end
     end
 end
 
---// CAM LOCK
-local camConn, camTarget
-
-local function startCamLock()
-    if camConn then camConn:Disconnect() end
-    camConn = RenderStepped:Connect(function()
-        if not S.CamLock then return end
-        if not camTarget or not camTarget.Parent then
-            camTarget = nil
-            for _, plr in ipairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer and getRole(plr) == "Murderer" then
-                    local char = plr.Character
-                    if char then
-                        camTarget = FindFirstChild(char, "Head") or FindFirstChild(char, "HumanoidRootPart")
-                        if camTarget then break end
-                    end
-                end
+-- Update distance labels + remove stale
+local function StartESPLoop()
+    if espRunConn then return end
+    espRunConn = RunService.Heartbeat:Connect(function()
+        if not LocalRoot then return end
+        for model, bb in pairs(espBillboards) do
+            if not model.Parent then removeESP(model); continue end
+            local lbl = bb:FindFirstChild("_lbl")
+            local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+            if lbl and root and model.Name ~= "Generator" then
+                local dist = math.floor((root.Position - LocalRoot.Position).Magnitude)
+                lbl.Text = model.Name.." ["..dist.."]"
             end
-            if not camTarget then return end
         end
-        local cur = Camera.CFrame
-        local look = CFrame.new(cur.Position, camTarget.Position)
-        Camera.CFrame = cur:Lerp(look, S.CamLockSmooth)
+    end)
+    -- Live hooks for new objects
+    KillersFolder.ChildAdded:Connect(function(k)
+        task.wait(0.5)
+        if Settings.ESPKillers and k:FindFirstChildOfClass("Humanoid") then
+            makeHighlight(k, ESPColors.killer); makeBillboard(k, k.Name)
+        end
+    end)
+    SurvivorsFolder.ChildAdded:Connect(function(s)
+        task.wait(0.5)
+        if Settings.ESPSurvivors and s ~= LocalCharacter and s:FindFirstChildOfClass("Humanoid") then
+            makeHighlight(s, ESPColors.survivor); makeBillboard(s, s.Name)
+        end
+    end)
+    workspace.DescendantAdded:Connect(function(d)
+        task.wait(0.1)
+        if Settings.ESPGenerators and d.Name=="Generator" and d:IsA("Model") and not espHighlights[d] then
+            setupGeneratorESP(d)
+        end
+        if Settings.ESPMedkits and d.Name=="Medkit" and not espHighlights[d] then
+            makeHighlight(d, ESPColors.medkit, 0.5)
+        end
+        if Settings.ESPBloxyCola and d.Name=="BloxyCola" and not espHighlights[d] then
+            makeHighlight(d, ESPColors.bloxycola, 0.5)
+        end
     end)
 end
 
-local function stopCamLock()
-    if camConn then camConn:Disconnect() camConn = nil end
-    camTarget = nil
+local function StopESPLoop()
+    if espRunConn then espRunConn:Disconnect(); espRunConn=nil end
+    for model,_ in pairs(espHighlights) do removeESP(model) end
 end
 
---// WINDUI
-local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+-- ─────────────────────────────────────────────────────────────
+-- Detection Circle visual (from open-source: CylinderHandleAdornment)
+-- ─────────────────────────────────────────────────────────────
+local function addDetectionCircle(killer)
+    if not killer:FindFirstChild("HumanoidRootPart") then return end
+    if detectionCircles[killer] then return end
+    local hrp = killer.HumanoidRootPart
+    local c = Instance.new("CylinderHandleAdornment")
+    c.Name="LarpDetCircle"; c.Adornee=hrp
+    c.Color3=Color3.fromRGB(255,255,0); c.AlwaysOnTop=true; c.ZIndex=1
+    c.Transparency=0.6; c.Radius=Settings.DetectionRange; c.Height=0.12
+    c.CFrame=CFrame.new(0,-(hrp.Size.Y/2+0.05),0)*CFrame.Angles(math.rad(90),0,0)
+    c.Parent=hrp; detectionCircles[killer]=c
+end
 
-local Window = WindUI:CreateWindow({
-    Title = "Larper Hub",
-    Icon = "skull",
-    Author = "Averiias / Elite / Larper",
-    Folder = "LarperHub",
-    Size = UDim2.fromOffset(580, 460),
-    ToggleKey = Enum.KeyCode.RightShift,
-    Theme = "Dark",
-    Resizable = true,
-})
+local function removeDetectionCircle(killer)
+    local c=detectionCircles[killer]; if c then c:Destroy() end; detectionCircles[killer]=nil
+end
 
--- ---- TAB: Silent Aim ----
-local AimTab = Window:Tab({ Title = "Silent Aim", Icon = "crosshair" })
-
-AimTab:Toggle({
-    Title = "Enable Silent Aim",
-    Flag = "SA_Enabled",
-    Value = S.SilentAim,
-    Callback = function(v) S.SilentAim = v end,
-})
-AimTab:Keybind({
-    Title = "Silent Aim Toggle Key",
-    Flag = "SA_Key",
-    Value = S.SilentAimKey,
-    Callback = function(k) S.SilentAimKey = k end,
-})
-AimTab:Toggle({
-    Title = "Gun Remote Silent Aim",
-    Flag = "SA_Gun",
-    Value = S.GunSilentAim,
-    Callback = function(v) S.GunSilentAim = v end,
-})
-AimTab:Toggle({
-    Title = "Team Check",
-    Flag = "SA_Team",
-    Value = S.TeamCheck,
-    Callback = function(v) S.TeamCheck = v end,
-})
-AimTab:Toggle({
-    Title = "Visible Check",
-    Flag = "SA_Vis",
-    Value = S.VisibleCheck,
-    Callback = function(v) S.VisibleCheck = v end,
-})
-AimTab:Dropdown({
-    Title = "Target Part",
-    Flag = "SA_Part",
-    Values = { "Head", "HumanoidRootPart", "Random" },
-    Value = S.TargetPart,
-    Callback = function(v) S.TargetPart = v end,
-})
-AimTab:Dropdown({
-    Title = "Ray Method",
-    Flag = "SA_Method",
-    Values = { "Raycast", "FindPartOnRay", "Mouse.Hit/Target" },
-    Value = S.Method,
-    Callback = function(v) S.Method = v end,
-})
-AimTab:Slider({
-    Title = "FOV Radius",
-    Flag = "SA_FOV",
-    Min = 50, Max = 500, Step = 1,
-    Value = S.FOV,
-    Callback = function(v) S.FOV = v end,
-})
-AimTab:Slider({
-    Title = "Hit Chance (%)",
-    Flag = "SA_Chance",
-    Min = 0, Max = 100, Step = 1,
-    Value = S.HitChance,
-    Callback = function(v) S.HitChance = v end,
-})
-AimTab:Toggle({
-    Title = "Debug: Print Gun Remotes",
-    Flag = "SA_Debug",
-    Value = S.DebugRemote,
-    Callback = function(v)
-        S.DebugRemote = v
-        if v then
-            collectGunRemotes()
-            for _, r in ipairs(gunRemotes) do print("[LarperHub] Remote:", r:GetFullName()) end
+RunService.RenderStepped:Connect(function()
+    if not LocalRoot then return end
+    for killer, circle in pairs(detectionCircles) do
+        if not killer.Parent or not killer:FindFirstChild("HumanoidRootPart") then
+            removeDetectionCircle(killer); continue
         end
-    end,
-})
-
--- ---- TAB: ESP ----
-local ESPTab = Window:Tab({ Title = "ESP", Icon = "eye" })
-
-ESPTab:Toggle({
-    Title = "Enable ESP",
-    Flag = "ESP_On",
-    Value = S.ESP,
-    Callback = function(v) S.ESP = v; if not v then clearESP() end end,
-})
-ESPTab:Toggle({ Title = "Murderer", Flag = "ESP_M", Value = S.ESPMurderer, Callback = function(v) S.ESPMurderer = v end })
-ESPTab:Toggle({ Title = "Sheriff",  Flag = "ESP_S", Value = S.ESPSheriff,  Callback = function(v) S.ESPSheriff = v end })
-ESPTab:Toggle({ Title = "Innocent", Flag = "ESP_I", Value = S.ESPInnocent, Callback = function(v) S.ESPInnocent = v end })
-ESPTab:Toggle({ Title = "Dropped Gun", Flag = "ESP_G", Value = S.ESPGunDrop, Callback = function(v) S.ESPGunDrop = v end })
-
--- ---- TAB: CamLock ----
-local CamTab = Window:Tab({ Title = "Cam Lock", Icon = "camera" })
-
-CamTab:Toggle({
-    Title = "Enable Cam Lock",
-    Flag = "CL_On",
-    Value = S.CamLock,
-    Callback = function(v)
-        S.CamLock = v
-        if v then startCamLock() else stopCamLock() end
-    end,
-})
-CamTab:Keybind({
-    Title = "Cam Lock Key",
-    Flag = "CL_Key",
-    Value = S.CamLockKey,
-    Callback = function(k) S.CamLockKey = k end,
-})
-CamTab:Slider({
-    Title = "Smoothness",
-    Flag = "CL_Sm",
-    Min = 0.01, Max = 1, Step = 0.01,
-    Value = S.CamLockSmooth,
-    Callback = function(v) S.CamLockSmooth = v end,
-})
-
--- ---- TAB: Visuals ----
-local VisTab = Window:Tab({ Title = "Visuals", Icon = "palette" })
-
-VisTab:Toggle({
-    Title = "Show FOV Circle",
-    Flag = "FOV_Vis",
-    Value = S.FOVVisible,
-    Callback = function(v) S.FOVVisible = v end,
-})
-VisTab:Slider({
-    Title = "FOV Circle Radius",
-    Flag = "FOV_Rad",
-    Min = 50, Max = 500, Step = 1,
-    Value = S.FOV,
-    Callback = function(v) S.FOV = v end,
-})
-
---// FOV CIRCLE
-local fovCircle = Drawing.new("Circle")
-fovCircle.Thickness = 1
-fovCircle.NumSides = 100
-fovCircle.Filled = false
-fovCircle.Transparency = 1
-fovCircle.Color = Color3.fromRGB(54, 57, 241)
-
---// RENDER LOOP
-RenderStepped:Connect(function()
-    -- FOV
-    if S.FOVVisible then
-        fovCircle.Visible = true
-        fovCircle.Radius = S.FOV
-        fovCircle.Position = GetMouseLocation(UserInputService)
-    else
-        fovCircle.Visible = false
+        circle.Radius = Settings.DetectionRange
+        local d = (killer.HumanoidRootPart.Position - LocalRoot.Position).Magnitude
+        circle.Color3 = d <= Settings.DetectionRange
+            and Color3.fromRGB(255,165,0) or Color3.fromRGB(255,255,0)
     end
-    -- ESP
-    refreshESP()
 end)
 
---// SILENT AIM HOOKS
+-- ─────────────────────────────────────────────────────────────
+-- Facing visual (CylinderHandleAdornment, from open-source)
+-- ─────────────────────────────────────────────────────────────
+local function addFacingVisual(killer)
+    if not killer or not killer:IsA("Model") then return end
+    if facingVisuals[killer] then return end
+    local hrp = killer:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+    local v = Instance.new("CylinderHandleAdornment")
+    v.Name="LarpFacingVisual"; v.Adornee=hrp
+    v.AlwaysOnTop=true; v.ZIndex=2; v.Transparency=0.55
+    v.Color3=Color3.fromRGB(255,255,0)
+    local dot  = math.clamp(Settings.FacingDot,-1,1)
+    local frac = math.acos(dot)/math.pi
+    v.Radius = math.max(1, Settings.DetectionRange*(0.20+(0.80*frac)))
+    v.Height = 0.12
+    local yOff = -(hrp.Size.Y/2+0.05)
+    local fwdD = Settings.DetectionRange*(0.35+0.15*frac)
+    v.CFrame = CFrame.new(0,yOff,-fwdD)*CFrame.Angles(math.rad(90),0,0)
+    v.Parent = hrp; facingVisuals[killer]=v
+end
 
--- 1) Raycast / Namecall hook (works for knife and any other raycast weapon)
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
-    local method = getnamecallmethod()
-    local args = { ... }
-    local self = args[1]
+local function removeFacingVisual(killer)
+    local v=facingVisuals[killer]; if v then v:Destroy() end; facingVisuals[killer]=nil
+end
 
-    if S.SilentAim and not checkcaller() and hitChance() then
-        -- Raycast-based silent aim
-        if self == Workspace then
-            local target = getTarget()
-            if target then
-                if method == "Raycast" and S.Method == "Raycast" then
-                    if validateArgs(args, ExpectedArguments.Raycast) then
-                        local origin = args[2]
-                        args[3] = (target.Position - origin).Unit * 1000
-                        return oldNamecall(unpack(args))
-                    end
-                elseif method == "FindPartOnRay" and S.Method == "FindPartOnRay" then
-                    if validateArgs(args, ExpectedArguments.FindPartOnRay) then
-                        local ray = args[2]
-                        args[2] = Ray.new(ray.Origin, (target.Position - ray.Origin).Unit * 1000)
-                        return oldNamecall(unpack(args))
-                    end
-                end
-            end
+RunService.RenderStepped:Connect(function()
+    if not LocalRoot then return end
+    for killer, visual in pairs(facingVisuals) do
+        if not killer.Parent or not killer:FindFirstChild("HumanoidRootPart") then
+            removeFacingVisual(killer); continue
         end
+        local hrp = killer.HumanoidRootPart
+        local d   = (hrp.Position-LocalRoot.Position).Magnitude
+        visual.Color3 = d<=Settings.DetectionRange
+            and Color3.fromRGB(255,0,0) or Color3.fromRGB(255,255,0)
+        visual.Transparency = d<=Settings.DetectionRange and 0.40 or 0.85
+    end
+end)
 
-        -- 2) Gun RemoteEvent hook (works for sheriff's gun)
-        if S.GunSilentAim and method == "FireServer" then
-            -- Check if self is one of our collected gun remotes
-            local isGunRemote = false
-            for _, r in ipairs(gunRemotes) do
-                if self == r then isGunRemote = true break end
-            end
-            if isGunRemote then
-                local target = getTarget()
-                if target then
-                    -- Most gun remotes send a direction or position as the first argument.
-                    -- We overwrite it with a vector toward the target.
-                    local origin = Camera.CFrame.Position
-                    local dir = (target.Position - origin).Unit * 1000
-                    -- Try to detect which argument is the direction/position
-                    for i = 2, #args do
-                        if typeof(args[i]) == "Vector3" then
-                            args[i] = dir
-                            break
-                        end
-                    end
-                    -- If no Vector3 arg, try CFrame
-                    for i = 2, #args do
-                        if typeof(args[i]) == "CFrame" then
-                            args[i] = CFrame.new(origin, target.Position)
-                            break
-                        end
-                    end
-                    return oldNamecall(unpack(args))
-                end
-            end
+KillersFolder.ChildAdded:Connect(function(k)
+    if Settings.DetectionCircle then
+        task.spawn(function()
+            k:WaitForChild("HumanoidRootPart",5); addDetectionCircle(k)
+        end)
+    end
+    if Settings.FacingVisual then
+        task.spawn(function()
+            k:WaitForChild("HumanoidRootPart",5); addFacingVisual(k)
+        end)
+    end
+end)
+KillersFolder.ChildRemoved:Connect(function(k)
+    removeDetectionCircle(k); removeFacingVisual(k)
+end)
+
+-- ─────────────────────────────────────────────────────────────
+-- Fullbright (from open-source)
+-- ─────────────────────────────────────────────────────────────
+local function EnableFullbright()
+    if not originalLighting.saved then
+        originalLighting.Ambient       = Lighting.Ambient
+        originalLighting.OutdoorAmbient= Lighting.OutdoorAmbient
+        originalLighting.Brightness    = Lighting.Brightness
+        originalLighting.ClockTime     = Lighting.ClockTime
+        originalLighting.saved         = true
+    end
+    Lighting.Ambient       = Color3.new(1,1,1)
+    Lighting.OutdoorAmbient= Color3.new(1,1,1)
+    Lighting.Brightness    = 2
+    Lighting.ClockTime     = 12
+end
+local function DisableFullbright()
+    if not originalLighting.saved then return end
+    Lighting.Ambient       = originalLighting.Ambient
+    Lighting.OutdoorAmbient= originalLighting.OutdoorAmbient
+    Lighting.Brightness    = originalLighting.Brightness
+    Lighting.ClockTime     = originalLighting.ClockTime
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Remove Slowness / Stunned (from open-source — risky)
+-- ─────────────────────────────────────────────────────────────
+local function RemoveSlowness()
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+                if hum.WalkSpeed < 16 then hum.WalkSpeed=16 end
+            end)
+            hum:GetPropertyChangedSignal("PlatformStand"):Connect(function()
+                if hum.PlatformStand then hum.PlatformStand=false end
+            end)
         end
     end
-    return oldNamecall(...)
-end))
+    pcall(function()
+        ReplicatedStorage.Modules.Schematics.StatusEffects.Slowness:Destroy()
+    end)
+end
+local function RemoveStunned()
+    pcall(function()
+        ReplicatedStorage.Modules.Schematics.StatusEffects.Stunned:Destroy()
+    end)
+end
 
--- 3) Mouse.Hit / Target hook (optional method)
-local oldIndex
-oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
-    if self == Mouse and S.SilentAim and S.Method == "Mouse.Hit/Target" and not checkcaller() then
-        local target = getTarget()
-        if target then
-            if key == "Target" then return target end
-            if key == "Hit" then
-                if S.Prediction then
-                    local hrp = target.Parent and target.Parent:FindFirstChild("HumanoidRootPart") or target
-                    local vel = hrp.AssemblyLinearVelocity or hrp.Velocity or Vector3.zero
-                    return target.CFrame + vel * S.PredictionAmount
-                end
-                return target.CFrame
-            end
+-- ─────────────────────────────────────────────────────────────
+-- FPS Boost (from open-source)
+-- ─────────────────────────────────────────────────────────────
+local function FPSBoost()
+    pcall(function()
+        local terrain = workspace:FindFirstChildOfClass("Terrain")
+        if terrain then
+            terrain.WaterWaveSize=0; terrain.WaterWaveSpeed=0
+            terrain.WaterReflectance=0; terrain.WaterTransparency=0
         end
-    end
-    return oldIndex(self, key)
-end))
-
---// MOBILE TOUCH CAM LOCK BUTTON
-if UserInputService.TouchEnabled then
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "LarperHub_Touch"
-    gui.ResetOnSpawn = false
-    gui.Parent = game:GetService("CoreGui")
-
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 72, 0, 72)
-    btn.Position = UDim2.new(1, -92, 0.5, -36)
-    btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-    btn.BackgroundTransparency = 0.15
-    btn.Text = "🔒"
-    btn.TextSize = 30
-    btn.TextColor3 = Color3.new(1, 1, 1)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.Parent = gui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1, 0)
-    corner.Parent = btn
-
-    btn.MouseButton1Click:Connect(function()
-        S.CamLock = not S.CamLock
-        if S.CamLock then
-            startCamLock()
-            btn.Text = "🔓"
-            btn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        else
-            stopCamLock()
-            btn.Text = "🔒"
-            btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+        Lighting.GlobalShadows=false; Lighting.FogEnd=9e9
+        for _,v in ipairs(game:GetDescendants()) do
+            if v:IsA("Part") or v:IsA("UnionOperation") or v:IsA("MeshPart") then
+                v.Material=Enum.Material.SmoothPlastic; v.Reflectance=0
+            elseif v:IsA("Decal") or v:IsA("Texture") then v.Transparency=1
+            elseif v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Fire")
+                or v:IsA("Smoke") or v:IsA("Sparkles") then v.Enabled=false
+            end
         end
     end)
 end
+
+-- ═════════════════════════════════════════════════════════════
+-- LARP HUB — Wind UI
+-- ═════════════════════════════════════════════════════════════
+local Window = WindUI:CreateWindow({
+    Title="Larp Hub", Icon="shield", Author="Guest 1337",
+    Theme="Dark", Folder="LarpHub", Transparent=true, Resizable=true,
+})
+
+-- ══════ TAB: Block ════════════════════════════════════════════
+local BlockTab = Window:Tab({Title="Block", Icon="shield"})
+
+BlockTab:Toggle({Title="Auto Block",Value=false,Flag="AutoBlock",
+    Callback=function(s)
+        Settings.AutoBlock=s
+        if s then StartWatching() else StopWatching() end
+        WindUI:Notify({Title="Auto Block",Content=s and "ON" or "OFF",
+            Icon=s and "solar:shield-bold" or "solar:shield-slash-bold",Duration=3})
+    end})
+BlockTab:Space()
+BlockTab:Toggle({Title="Sound Mode  [highest reliability]",Value=true,Flag="SoundMode",
+    Callback=function(s) Settings.SoundMode=s end})
+BlockTab:Space()
+BlockTab:Toggle({Title="Animation ID Mode",Value=true,Flag="AnimIDMode",
+    Callback=function(s) Settings.AnimIDMode=s end})
+BlockTab:Space()
+BlockTab:Toggle({Title="Animation Name Mode",Value=true,Flag="AnimNameMode",
+    Callback=function(s) Settings.AnimNameMode=s end})
+BlockTab:Space()
+BlockTab:Slider({Title="Block Delay (ms)",Step=5,Flag="BlockDelay",
+    Value={Min=0,Max=500,Default=0},
+    Callback=function(v) manualBlockDelay=v/1000; blockDelay=manualBlockDelay end})
+BlockTab:Space()
+BlockTab:Toggle({Title="Auto Adjust Delay per Killer",Value=false,Flag="AutoDelay",
+    Callback=function(s) Settings.AutoAdjustDelay=s end})
+BlockTab:Space()
+BlockTab:Toggle({Title="Punch Aimbot",Value=false,Flag="PunchAimbot",
+    Callback=function(s) Settings.PunchAimbot=s; if not s then StopAim() end end})
+
+-- ══════ TAB: HDT ══════════════════════════════════════════════
+local HDTTab = Window:Tab({Title="HDT", Icon="eye"})
+HDTTab:Toggle({Title="HDT — Head Direction Tracking",Value=true,Flag="HDT",
+    Callback=function(s) Settings.HDT=s; if not s then StopHDT() end end})
+HDTTab:Space()
+HDTTab:Label({Title="2.0s = base Punch stun | 3.5s = post-parry stun"})
+HDTTab:Space()
+HDTTab:Slider({Title="HDT Duration (÷10 = seconds)",Step=1,Flag="HDTDuration",
+    Value={Min=10,Max=50,Default=20},
+    Callback=function(v) Settings.HDTDuration=v/10 end})
+
+-- ══════ TAB: Detection ════════════════════════════════════════
+local DetTab = Window:Tab({Title="Detection", Icon="radar"})
+
+DetTab:Toggle({Title="Wall Check (Raycast LOS)",Value=false,Flag="WallCheck",
+    Callback=function(s) Settings.WallCheck=s end})
+DetTab:Space()
+DetTab:Toggle({Title="Facing Check",Value=true,Flag="FacingCheck",
+    Callback=function(s) Settings.FacingCheck=s end})
+DetTab:Space()
+DetTab:Slider({Title="Facing DOT threshold (÷10)",Step=1,Flag="FacingDot",
+    Value={Min=-10,Max=10,Default=3},
+    Callback=function(v) Settings.FacingDot=v/10 end})
+DetTab:Space()
+DetTab:Slider({Title="Detection Range (studs)",Step=1,Flag="DetRange",
+    Value={Min=5,Max=50,Default=18},
+    Callback=function(v) Settings.DetectionRange=v end})
+DetTab:Space()
+DetTab:Toggle({Title="Detection Circle Visual",Value=false,Flag="DetCircle",
+    Callback=function(s)
+        Settings.DetectionCircle=s
+        for _,k in ipairs(KillersFolder:GetChildren()) do
+            if s then addDetectionCircle(k) else removeDetectionCircle(k) end
+        end
+    end})
+DetTab:Space()
+DetTab:Toggle({Title="Facing Visual",Value=false,Flag="FacingVis",
+    Callback=function(s)
+        Settings.FacingVisual=s
+        for _,k in ipairs(KillersFolder:GetChildren()) do
+            if s then addFacingVisual(k) else removeFacingVisual(k) end
+        end
+    end})
+DetTab:Space()
+DetTab:Label({Title="── Cone Check ──"})
+DetTab:Toggle({Title="Cone Check",Value=true,Flag="UseCone",
+    Callback=function(s) Settings.UseConeCheck=s end})
+DetTab:Space()
+DetTab:Slider({Title="Cone Length (studs)",Step=1,Flag="ConeLen",
+    Value={Min=3,Max=50,Default=15},
+    Callback=function(v) Settings.ConeLength=v end})
+DetTab:Space()
+DetTab:Slider({Title="Cone Angle (total FOV°)",Step=5,Flag="ConeAng",
+    Value={Min=10,Max=180,Default=60},
+    Callback=function(v) Settings.ConeAngle=v end})
+DetTab:Space()
+DetTab:Label({Title="── Box Check ──"})
+DetTab:Toggle({Title="Box Check",Value=true,Flag="UseBox",
+    Callback=function(s) Settings.UseBoxCheck=s end})
+DetTab:Space()
+DetTab:Slider({Title="Box Width (studs)",Step=1,Flag="BoxW",
+    Value={Min=1,Max=30,Default=8},Callback=function(v) Settings.BoxWidth=v end})
+DetTab:Space()
+DetTab:Slider({Title="Box Length (studs)",Step=1,Flag="BoxL",
+    Value={Min=1,Max=50,Default=12},Callback=function(v) Settings.BoxLength=v end})
+DetTab:Space()
+DetTab:Slider({Title="Box Height (studs)",Step=1,Flag="BoxH",
+    Value={Min=1,Max=20,Default=6},Callback=function(v) Settings.BoxHeight=v end})
+
+-- ══════ TAB: Attacks ══════════════════════════════════════════
+local AtkTab = Window:Tab({Title="Attacks", Icon="sword"})
+AtkTab:Label({Title="Blockable Attack Names (Anim Name Mode)"})
+for _,e in ipairs({
+    {d="Slash",k="slash"},{d="Punch",k="punch"},{d="Stab",k="stab"},
+    {d="Lacerate",k="lacerate"},{d="Carving Slash",k="carvingslash"},{d="Eviscerate",k="eviscerate"},
+}) do
+    AtkTab:Toggle({Title=e.d,Value=true,Flag="Atk_"..e.k,
+        Callback=function(s) BlockableAttacks[e.k]=s or nil end})
+end
+
+-- ══════ TAB: Stamina ══════════════════════════════════════════
+local StamTab = Window:Tab({Title="Stamina", Icon="zap"})
+StamTab:Toggle({Title="Infinite Stamina",Value=false,Flag="InfStam",
+    Callback=function(s)
+        Settings.InfiniteStamina=s
+        if s then EnableStamina() else DisableStamina() end
+    end})
+StamTab:Space()
+StamTab:Slider({Title="Max Stamina",Step=1,Flag="MaxStam",
+    Value={Min=1,Max=1000,Default=sprintModule.MaxStamina},
+    Callback=function(v) Settings.MaxStamina=v; sprintModule.MaxStamina=v end})
+StamTab:Space()
+StamTab:Slider({Title="Sprint Speed",Step=1,Flag="SprintSpd",
+    Value={Min=1,Max=30,Default=sprintModule.SprintSpeed},
+    Callback=function(v) Settings.SprintSpeed=v; sprintModule.SprintSpeed=v end})
+StamTab:Space()
+StamTab:Slider({Title="Stamina Gain",Step=1,Flag="StamGain",
+    Value={Min=1,Max=1000,Default=sprintModule.StaminaGain},
+    Callback=function(v) Settings.StaminaGain=v; sprintModule.StaminaGain=v end})
+StamTab:Space()
+StamTab:Slider({Title="Stamina Drain",Step=1,Flag="StamDrain",
+    Value={Min=0,Max=100,Default=sprintModule.StaminaDrain or 1},
+    Callback=function(v) Settings.StaminaDrain=v; sprintModule.StaminaDrain=v end})
+StamTab:Space()
+StamTab:Slider({Title="Regen Delay (s ÷10)",Step=1,Flag="RegenDel",
+    Value={Min=0,Max=50,Default=math.floor((sprintModule.StaminaRegenDelay or 0.5)*10)},
+    Callback=function(v) Settings.RegenDelay=v/10; sprintModule.StaminaRegenDelay=v/10 end})
+
+-- ══════ TAB: ESP ══════════════════════════════════════════════
+local ESPTab = Window:Tab({Title="ESP", Icon="scan-eye"})
+local function espToggle(title, flag, key, color)
+    ESPTab:Toggle({Title=title,Value=false,Flag=flag,
+        Callback=function(s)
+            Settings[key]=s; refreshESP()
+            if s then StartESPLoop() end
+        end})
+    ESPTab:Space()
+end
+espToggle("Killer ESP",        "ESPKill",  "ESPKillers",   ESPColors.killer)
+espToggle("Survivor ESP",      "ESPSurv",  "ESPSurvivors", ESPColors.survivor)
+espToggle("Generator ESP",     "ESPGen",   "ESPGenerators",ESPColors.generator)
+espToggle("Medkit ESP",        "ESPMed",   "ESPMedkits",   ESPColors.medkit)
+espToggle("BloxyCola ESP",     "ESPCola",  "ESPBloxyCola", ESPColors.bloxycola)
+
+-- ══════ TAB: Stats ════════════════════════════════════════════
+local StatsTab = Window:Tab({Title="Stats", Icon="bar-chart-2"})
+blockLabel = StatsTab:Label({Title="Blocks fired: 0"})
+StatsTab:Space()
+StatsTab:Button({Title="Reset",Icon="rotate-ccw",
+    Callback=function() totalBlocks=0; blockLabel:Set({Title="Blocks fired: 0"}) end})
+
+-- ══════ TAB: Misc ═════════════════════════════════════════════
+local MiscTab = Window:Tab({Title="Misc", Icon="box"})
+MiscTab:Toggle({Title="Fullbright",Value=false,Flag="Fullbright",
+    Callback=function(s)
+        Settings.Fullbright=s
+        if s then EnableFullbright() else DisableFullbright() end
+    end})
+MiscTab:Space()
+MiscTab:Button({Title="FPS Boost",Icon="gauge",
+    Callback=function()
+        FPSBoost()
+        WindUI:Notify({Title="FPS Boost",Content="Applied!",Icon="solar:cpu-bold",Duration=3})
+    end})
+MiscTab:Space()
+MiscTab:Button({Title="Remove Slowness (Risky)",Icon="wind",Callback=RemoveSlowness})
+MiscTab:Space()
+MiscTab:Button({Title="Remove Stunned (Risky)",Icon="zap-off",Callback=RemoveStunned})
+MiscTab:Space()
+MiscTab:Button({Title="Clear Cache",Icon="trash-2",
+    Callback=function()
+        for _,v in ipairs(workspace:GetChildren()) do
+            if v:IsA("Part") and v.Name=="AntiFlickZone" then v:Destroy() end
+        end
+        pcall(collectgarbage, "collect")
+        WindUI:Notify({Title="Cache Cleared",Content="Done!",Icon="solar:trash-bin-trash-bold",Duration=2})
+    end})
+MiscTab:Space()
+MiscTab:Toggle({Title="Debug Notifications",Value=false,Flag="Debug",
+    Callback=function(s) Settings.Debug=s end})
+
+-- ══════ TAB: Settings ═════════════════════════════════════════
+local SettingsTab = Window:Tab({Title="Settings", Icon="settings"})
+SettingsTab:Dropdown({Title="Theme",Flag="Theme",
+    Values={"Dark","Light","Rose","Indigo","Violet","Amber","Sky","Plant"},Value=1,
+    Callback=function(s) WindUI:SetTheme(s) end})
+
+-- ─────────────────────────────────────────────────────────────
+-- Boot
+-- ─────────────────────────────────────────────────────────────
+if LocalPlayer.Character then
+    task.spawn(function() SetupLocalCharacter(LocalPlayer.Character) end)
+end
+
+WindUI:Notify({
+    Title="Larp Hub Loaded",
+    Content="All systems ready. Enable features in each tab.",
+    Icon="solar:shield-bold", Duration=5,
+})
